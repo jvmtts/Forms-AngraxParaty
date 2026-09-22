@@ -4,6 +4,8 @@ export const FIELD_LIMITS = {
   nome: 120,
   cpf: 14,
   rg: 14,
+  cnpj: 18,
+  razaoSocial: 150,
   data: 10,
   email: 254,
   whatsapp: 15,
@@ -32,13 +34,6 @@ export function limitText(value: string, maxLength: number) {
   return value.slice(0, maxLength)
 }
 
-export function sanitizeRg(value: string) {
-  return value
-    .toUpperCase()
-    .replace(/[^A-Z0-9.-]/g, '')
-    .slice(0, FIELD_LIMITS.rg)
-}
-
 export function sanitizeIdentifier(value: string, maxLength: number) {
   return value
     .toUpperCase()
@@ -59,6 +54,15 @@ export function maskCpf(value: string) {
     .replace(/(\d{3})(\d)/, '$1.$2')
     .replace(/(\d{3})(\d)/, '$1.$2')
     .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+}
+
+export function maskCnpj(value: string) {
+  const digits = onlyDigits(value).slice(0, 14)
+  return digits
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
 
 export function maskPhone(value: string) {
@@ -110,6 +114,22 @@ export function isValidCpf(value: string) {
   return calculateDigit(9) === Number(cpf[9]) && calculateDigit(10) === Number(cpf[10])
 }
 
+export function isValidCnpj(value: string) {
+  const cnpj = onlyDigits(value)
+  if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false
+
+  const calculateDigit = (baseLength: number) => {
+    const weights = baseLength === 12
+      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    const sum = weights.reduce((total, weight, index) => total + Number(cnpj[index]) * weight, 0)
+    const remainder = sum % 11
+    return remainder < 2 ? 0 : 11 - remainder
+  }
+
+  return calculateDigit(12) === Number(cnpj[12]) && calculateDigit(13) === Number(cnpj[13])
+}
+
 export function validateFile(file: File | null) {
   if (!file) return 'Envie este documento.'
   const hasAllowedType = ALLOWED_FILE_TYPES.has(file.type)
@@ -146,9 +166,8 @@ export function validatePersonal(values: FormValues) {
   }
   if (!isValidCpf(values.cpf)) errors.cpf = 'Informe um CPF válido com 11 dígitos.'
 
-  const rgLength = values.rg.replace(/[^A-Z0-9]/g, '').length
-  if (rgLength < 5 || rgLength > FIELD_LIMITS.rg) {
-    errors.rg = 'Informe um RG com 5 a 14 letras ou números.'
+  if (!/^\d{5,14}$/.test(values.rg)) {
+    errors.rg = 'Informe um RG com 5 a 14 números.'
   }
 
   if (!isValidBirthDate(values.dataNascimento)) {
@@ -175,11 +194,25 @@ export function validateJet(values: FormValues) {
 
   if (!values.proprietarioJet) errors.proprietarioJet = 'Informe quem é o proprietário.'
   if (values.proprietarioJet === 'terceiro') {
-    if (!isValidPersonName(values.nomeProprietario)) {
-      errors.nomeProprietario = 'Informe nome e sobrenome do proprietário.'
+    if (!values.tipoProprietario) errors.tipoProprietario = 'Selecione pessoa física ou pessoa jurídica.'
+
+    if (values.tipoProprietario === 'pf') {
+      if (!isValidPersonName(values.nomeProprietario)) {
+        errors.nomeProprietario = 'Informe nome e sobrenome do proprietário.'
+      }
+      if (!isValidCpf(values.cpfProprietario)) {
+        errors.cpfProprietario = 'Informe um CPF válido com 11 dígitos.'
+      }
     }
-    if (!isValidCpf(values.cpfProprietario)) {
-      errors.cpfProprietario = 'Informe um CPF válido com 11 dígitos.'
+
+    if (values.tipoProprietario === 'pj') {
+      const companyName = values.razaoSocialProprietario.trim()
+      if (companyName.length < 2 || companyName.length > FIELD_LIMITS.razaoSocial) {
+        errors.razaoSocialProprietario = 'Informe a razão social da empresa.'
+      }
+      if (!isValidCnpj(values.cnpjProprietario)) {
+        errors.cnpjProprietario = 'Informe um CNPJ válido com 14 dígitos.'
+      }
     }
   }
 

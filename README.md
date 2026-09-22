@@ -16,10 +16,16 @@ npm run lint
 npm run build
 ```
 
-O envio do formulário, o armazenamento dos documentos e a geração do contrato serão conectados depois da definição final dos campos e do fluxo operacional.
+## Integração com o Basin
 
-Para ativar o envio, copie `.env.example` para `.env` e informe o endpoint aprovado:
+O formulário já está preparado para enviar os dados e os documentos diretamente ao Basin. A geração do contrato não faz parte desta etapa.
+
+Para testar localmente, copie `.env.example` para `.env` e substitua o valor pelo endpoint criado no painel do Basin:
 
 ```env
-VITE_FORM_ENDPOINT=https://seu-endpoint-seguro.example
+VITE_BASIN_ENDPOINT=https://usebasin.com/f/SEU_FORM_ID
 ```
+
+Na hospedagem, cadastre a mesma variável de ambiente e publique novamente o projeto. Como as variáveis do Vite são aplicadas durante a compilação, uma nova publicação é necessária sempre que o endpoint for alterado.
+
+O envio usa `multipart/form-data`, mantém os documentos em seus formatos originais e apresenta os campos no painel do Basin com nomes legíveis. Sem um endpoint válido configurado, nenhum dado é enviado.

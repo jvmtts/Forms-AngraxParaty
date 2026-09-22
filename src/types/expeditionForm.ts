@@ -1,5 +1,6 @@
 export type Step = 0 | 1 | 2
 export type Ownership = '' | 'participante' | 'terceiro'
+export type OwnerType = '' | 'pf' | 'pj'
 
 export interface FormValues {
   nomeCompleto: string
@@ -15,8 +16,11 @@ export interface FormValues {
   cidade: string
   estado: string
   proprietarioJet: Ownership
+  tipoProprietario: OwnerType
   nomeProprietario: string
   cpfProprietario: string
+  razaoSocialProprietario: string
+  cnpjProprietario: string
   marcaJet: string
   modeloJet: string
   anoJet: string
@@ -44,8 +48,11 @@ export const initialValues: FormValues = {
   cidade: '',
   estado: '',
   proprietarioJet: '',
+  tipoProprietario: '',
   nomeProprietario: '',
   cpfProprietario: '',
+  razaoSocialProprietario: '',
+  cnpjProprietario: '',
   marcaJet: '',
   modeloJet: '',
   anoJet: '',

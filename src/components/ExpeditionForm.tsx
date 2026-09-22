@@ -18,18 +18,18 @@ import {
   FIELD_LIMITS,
   limitText,
   maskCep,
+  maskCnpj,
   maskCpf,
   maskDate,
   maskPhone,
   onlyDigits,
   sanitizeHouseNumber,
   sanitizeIdentifier,
-  sanitizeRg,
   validateJet,
   validatePersonal,
 } from '../lib/formRules'
 import { initialValues } from '../types/expeditionForm'
-import type { FormErrors, FormValues, Ownership, Step } from '../types/expeditionForm'
+import type { FormErrors, FormValues, Ownership, OwnerType, Step } from '../types/expeditionForm'
 
 const states = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
@@ -42,6 +42,75 @@ const steps = [
   { label: 'Jet e habilitação', icon: ShipWheel },
   { label: 'Revisão', icon: FileCheck2 },
 ]
+
+const BASIN_ENDPOINT = import.meta.env.VITE_BASIN_ENDPOINT?.trim() ?? ''
+const SUBMISSION_TIMEOUT_MS = 180_000
+
+function isValidBasinEndpoint(endpoint: string) {
+  try {
+    const url = new URL(endpoint)
+    return url.protocol === 'https:' && url.hostname === 'usebasin.com' && /^\/f\/[^/]+\/?$/.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
+const BASIN_ENDPOINT_IS_VALID = isValidBasinEndpoint(BASIN_ENDPOINT)
+
+function appendText(payload: FormData, label: string, value: string) {
+  const normalizedValue = value.trim()
+  if (normalizedValue) payload.append(label, normalizedValue)
+}
+
+function createBasinPayload(values: FormValues) {
+  const payload = new FormData()
+
+  payload.append('_subject', `Nova inscrição — ${values.nomeCompleto} (Expedição Angra × Paraty)`)
+  payload.append('Evento', 'Expedição Angra × Paraty')
+  appendText(payload, 'Nome completo', values.nomeCompleto)
+  appendText(payload, 'CPF', values.cpf)
+  appendText(payload, 'RG', values.rg)
+  appendText(payload, 'Data de nascimento', values.dataNascimento)
+  appendText(payload, 'E-mail', values.email)
+  appendText(payload, 'WhatsApp', values.whatsapp)
+  appendText(payload, 'CEP', values.cep)
+  appendText(payload, 'Endereço', values.endereco)
+  appendText(payload, 'Número', values.numero)
+  appendText(payload, 'Complemento', values.complemento)
+  appendText(payload, 'Cidade', values.cidade)
+  appendText(payload, 'Estado', values.estado)
+
+  if (values.proprietarioJet === 'participante') {
+    payload.append('Proprietário do jet ski', 'O próprio participante')
+    payload.append('Tipo do proprietário', 'Pessoa física')
+    appendText(payload, 'Nome do proprietário', values.nomeCompleto)
+    appendText(payload, 'CPF do proprietário', values.cpf)
+  } else {
+    payload.append('Proprietário do jet ski', 'Terceiro')
+    payload.append('Tipo do proprietário', values.tipoProprietario === 'pj' ? 'Pessoa jurídica' : 'Pessoa física')
+
+    if (values.tipoProprietario === 'pj') {
+      appendText(payload, 'Razão social do proprietário', values.razaoSocialProprietario)
+      appendText(payload, 'CNPJ do proprietário', values.cnpjProprietario)
+    } else {
+      appendText(payload, 'Nome do proprietário', values.nomeProprietario)
+      appendText(payload, 'CPF do proprietário', values.cpfProprietario)
+    }
+  }
+
+  appendText(payload, 'Marca do jet ski', values.marcaJet)
+  appendText(payload, 'Modelo do jet ski', values.modeloJet)
+  appendText(payload, 'Ano do jet ski', values.anoJet)
+  appendText(payload, 'Inscrição do jet ski', values.inscricaoJet)
+  appendText(payload, 'Número da habilitação de motonauta', values.numeroArrais)
+  appendText(payload, 'Validade da habilitação', values.validadeArrais)
+  payload.append('Declaração de veracidade aceita', values.confirmacao ? 'Sim' : 'Não')
+
+  if (values.docJet) payload.append('Documento do jet ski', values.docJet)
+  if (values.docArrais) payload.append('Habilitação de motonauta', values.docArrais)
+
+  return payload
+}
 
 const fieldClassName = (hasError: boolean) =>
   `h-14 w-full rounded-xl border bg-[#fbfcfa] px-4 text-[15px] text-[#132d36] outline-none transition duration-200 placeholder:text-[#99a5a8] hover:border-[#aab9ba] focus:border-[#0b92aa] focus:bg-white focus:ring-4 focus:ring-[#0b92aa]/10 ${
@@ -272,14 +341,40 @@ export function ExpeditionForm() {
     setValues((current) => ({
       ...current,
       proprietarioJet: ownership,
+      tipoProprietario: ownership === 'participante' ? '' : current.tipoProprietario,
       nomeProprietario: ownership === 'participante' ? '' : current.nomeProprietario,
       cpfProprietario: ownership === 'participante' ? '' : current.cpfProprietario,
+      razaoSocialProprietario: ownership === 'participante' ? '' : current.razaoSocialProprietario,
+      cnpjProprietario: ownership === 'participante' ? '' : current.cnpjProprietario,
     }))
     setErrors((current) => ({
       ...current,
       proprietarioJet: undefined,
+      tipoProprietario: undefined,
       nomeProprietario: undefined,
       cpfProprietario: undefined,
+      razaoSocialProprietario: undefined,
+      cnpjProprietario: undefined,
+    }))
+    setSubmitError('')
+  }
+
+  const updateOwnerType = (ownerType: OwnerType) => {
+    setValues((current) => ({
+      ...current,
+      tipoProprietario: ownerType,
+      nomeProprietario: ownerType === 'pf' ? current.nomeProprietario : '',
+      cpfProprietario: ownerType === 'pf' ? current.cpfProprietario : '',
+      razaoSocialProprietario: ownerType === 'pj' ? current.razaoSocialProprietario : '',
+      cnpjProprietario: ownerType === 'pj' ? current.cnpjProprietario : '',
+    }))
+    setErrors((current) => ({
+      ...current,
+      tipoProprietario: undefined,
+      nomeProprietario: undefined,
+      cpfProprietario: undefined,
+      razaoSocialProprietario: undefined,
+      cnpjProprietario: undefined,
     }))
     setSubmitError('')
   }
@@ -328,30 +423,53 @@ export function ExpeditionForm() {
       return
     }
 
-    const endpoint = import.meta.env.VITE_FORM_ENDPOINT?.trim()
-    if (!endpoint) {
+    if (!BASIN_ENDPOINT) {
       setSubmitError('O formulário está pronto, mas o canal de envio ainda não foi configurado.')
+      return
+    }
+
+    if (!BASIN_ENDPOINT_IS_VALID) {
+      setSubmitError('O endereço de envio configurado não é um endpoint válido do Basin.')
       return
     }
 
     setSubmitting(true)
     setSubmitError('')
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), SUBMISSION_TIMEOUT_MS)
 
     try {
-      const payload = new FormData()
-      payload.append('evento', 'Expedição Angra × Paraty')
-      Object.entries(values).forEach(([key, value]) => {
-        if (value instanceof File) payload.append(key, value)
-        else payload.append(key, typeof value === 'string' ? value.trim() : String(value))
+      const response = await fetch(BASIN_ENDPOINT, {
+        method: 'POST',
+        body: createBasinPayload(values),
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
       })
 
-      const response = await fetch(endpoint, { method: 'POST', body: payload })
-      if (!response.ok) throw new Error(`Falha no envio: ${response.status}`)
+      if (!response.ok) {
+        let responseMessage = ''
+
+        try {
+          const responseBody = await response.json() as { error?: string; message?: string }
+          responseMessage = responseBody.message ?? responseBody.error ?? ''
+        } catch {
+          responseMessage = ''
+        }
+
+        throw new Error(responseMessage || `Falha no envio: ${response.status}`)
+      }
+
       setSubmitted(true)
       scrollToForm()
-    } catch {
-      setSubmitError('Não foi possível enviar agora. Verifique sua conexão e tente novamente.')
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === 'AbortError'
+      setSubmitError(
+        timedOut
+          ? 'O envio demorou mais do que o esperado. Verifique sua conexão e tente novamente.'
+          : 'Não foi possível enviar agora. Verifique sua conexão e tente novamente.',
+      )
     } finally {
+      window.clearTimeout(timeoutId)
       setSubmitting(false)
     }
   }
@@ -425,7 +543,7 @@ export function ExpeditionForm() {
                   <TextField id="nomeCompleto" label="Nome completo" required autoComplete="name" maxLength={FIELD_LIMITS.nome} value={values.nomeCompleto} error={errors.nomeCompleto} onChange={(event) => updateField('nomeCompleto', limitText(event.target.value, FIELD_LIMITS.nome))} />
                 </div>
                 <TextField id="cpf" label="CPF" required inputMode="numeric" maxLength={FIELD_LIMITS.cpf} placeholder="000.000.000-00" value={values.cpf} error={errors.cpf} onChange={(event) => updateField('cpf', maskCpf(event.target.value))} />
-                <TextField id="rg" label="RG" required maxLength={FIELD_LIMITS.rg} hint="Até 14 caracteres. Letras, números, ponto e hífen." value={values.rg} error={errors.rg} onChange={(event) => updateField('rg', sanitizeRg(event.target.value))} />
+                <TextField id="rg" label="RG" required inputMode="numeric" maxLength={FIELD_LIMITS.rg} hint="Somente números, de 5 a 14 dígitos." value={values.rg} error={errors.rg} onChange={(event) => updateField('rg', onlyDigits(event.target.value).slice(0, FIELD_LIMITS.rg))} />
                 <TextField id="dataNascimento" label="Data de nascimento" required inputMode="numeric" autoComplete="bday" maxLength={FIELD_LIMITS.data} placeholder="DD/MM/AAAA" value={values.dataNascimento} error={errors.dataNascimento} onChange={(event) => updateField('dataNascimento', maskDate(event.target.value))} />
                 <TextField id="whatsapp" label="WhatsApp" required inputMode="numeric" autoComplete="tel" maxLength={FIELD_LIMITS.whatsapp} placeholder="(11) 99999-9999" value={values.whatsapp} error={errors.whatsapp} onChange={(event) => updateField('whatsapp', maskPhone(event.target.value))} />
                 <div className="sm:col-span-2">
@@ -455,7 +573,7 @@ export function ExpeditionForm() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
                     ['participante', 'Está em meu nome'],
-                    ['terceiro', 'Está em nome de outra pessoa'],
+                    ['terceiro', 'Está em nome de outra pessoa ou empresa'],
                   ].map(([value, label]) => (
                     <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 text-sm font-semibold transition ${values.proprietarioJet === value ? 'border-[#0b92aa] bg-[#edfafa] text-[#087e94] ring-4 ring-[#0b92aa]/5' : 'border-[#d1dcda] bg-[#fbfcfa] text-[#52636a] hover:border-[#0b92aa]'}`} key={value}>
                       <input checked={values.proprietarioJet === value} id={value === 'participante' ? 'proprietarioJet' : undefined} name="proprietarioJet" onChange={() => updateOwnership(value as Ownership)} type="radio" value={value} />
@@ -466,9 +584,34 @@ export function ExpeditionForm() {
               </FieldShell>
 
               {values.proprietarioJet === 'terceiro' && (
-                <div className="mt-6 grid gap-6 sm:grid-cols-2">
-                  <TextField id="nomeProprietario" label="Nome completo do proprietário" required maxLength={FIELD_LIMITS.nome} value={values.nomeProprietario} error={errors.nomeProprietario} onChange={(event) => updateField('nomeProprietario', limitText(event.target.value, FIELD_LIMITS.nome))} />
-                  <TextField id="cpfProprietario" label="CPF do proprietário" required inputMode="numeric" maxLength={FIELD_LIMITS.cpf} value={values.cpfProprietario} error={errors.cpfProprietario} onChange={(event) => updateField('cpfProprietario', maskCpf(event.target.value))} />
+                <div className="mt-6 rounded-2xl border border-[#d8e2e0] bg-[#f8fbfa] p-5 sm:p-6">
+                  <FieldShell id="tipoProprietario" label="Tipo de proprietário" error={errors.tipoProprietario} required>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {[
+                        ['pf', 'Pessoa física'],
+                        ['pj', 'Pessoa jurídica'],
+                      ].map(([value, label]) => (
+                        <label className={`flex cursor-pointer items-center gap-3 rounded-xl border bg-white p-4 text-sm font-semibold transition ${values.tipoProprietario === value ? 'border-[#0b92aa] text-[#087e94] ring-4 ring-[#0b92aa]/5' : 'border-[#d1dcda] text-[#52636a] hover:border-[#0b92aa]'}`} key={value}>
+                          <input checked={values.tipoProprietario === value} id={value === 'pf' ? 'tipoProprietario' : undefined} name="tipoProprietario" onChange={() => updateOwnerType(value as OwnerType)} type="radio" value={value} />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </FieldShell>
+
+                  {values.tipoProprietario === 'pf' && (
+                    <div className="mt-6 grid gap-6 sm:grid-cols-2">
+                      <TextField id="nomeProprietario" label="Nome completo do proprietário" required maxLength={FIELD_LIMITS.nome} value={values.nomeProprietario} error={errors.nomeProprietario} onChange={(event) => updateField('nomeProprietario', limitText(event.target.value, FIELD_LIMITS.nome))} />
+                      <TextField id="cpfProprietario" label="CPF do proprietário" required inputMode="numeric" maxLength={FIELD_LIMITS.cpf} placeholder="000.000.000-00" value={values.cpfProprietario} error={errors.cpfProprietario} onChange={(event) => updateField('cpfProprietario', maskCpf(event.target.value))} />
+                    </div>
+                  )}
+
+                  {values.tipoProprietario === 'pj' && (
+                    <div className="mt-6 grid gap-6 sm:grid-cols-2">
+                      <TextField id="razaoSocialProprietario" label="Razão social" required maxLength={FIELD_LIMITS.razaoSocial} value={values.razaoSocialProprietario} error={errors.razaoSocialProprietario} onChange={(event) => updateField('razaoSocialProprietario', limitText(event.target.value, FIELD_LIMITS.razaoSocial))} />
+                      <TextField id="cnpjProprietario" label="CNPJ" required inputMode="numeric" maxLength={FIELD_LIMITS.cnpj} placeholder="00.000.000/0000-00" value={values.cnpjProprietario} error={errors.cnpjProprietario} onChange={(event) => updateField('cnpjProprietario', maskCnpj(event.target.value))} />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -485,10 +628,10 @@ export function ExpeditionForm() {
               <div className="my-10 border-t border-[#dce5e5]" />
 
               <div className="grid gap-x-6 gap-y-7 sm:grid-cols-2">
-                <TextField id="numeroArrais" label="Número do arrais" required maxLength={FIELD_LIMITS.numeroArrais} hint="Digite exatamente como aparece na habilitação." value={values.numeroArrais} error={errors.numeroArrais} onChange={(event) => updateField('numeroArrais', sanitizeIdentifier(event.target.value, FIELD_LIMITS.numeroArrais))} />
-                <TextField id="validadeArrais" label="Validade do arrais" required inputMode="numeric" maxLength={FIELD_LIMITS.data} placeholder="DD/MM/AAAA" value={values.validadeArrais} error={errors.validadeArrais} onChange={(event) => updateField('validadeArrais', maskDate(event.target.value))} />
+                <TextField id="numeroArrais" label="Número da habilitação de motonauta" required maxLength={FIELD_LIMITS.numeroArrais} hint="Digite exatamente como aparece na Carteira de Habilitação de Amador." value={values.numeroArrais} error={errors.numeroArrais} onChange={(event) => updateField('numeroArrais', sanitizeIdentifier(event.target.value, FIELD_LIMITS.numeroArrais))} />
+                <TextField id="validadeArrais" label="Validade da habilitação" required inputMode="numeric" maxLength={FIELD_LIMITS.data} placeholder="DD/MM/AAAA" value={values.validadeArrais} error={errors.validadeArrais} onChange={(event) => updateField('validadeArrais', maskDate(event.target.value))} />
                 <div className="sm:col-span-2">
-                  <UploadField id="docArrais" label="Documento do arrais" file={values.docArrais} error={errors.docArrais} onChange={(file) => updateField('docArrais', file)} />
+                  <UploadField id="docArrais" label="Habilitação de motonauta" file={values.docArrais} error={errors.docArrais} onChange={(file) => updateField('docArrais', file)} />
                 </div>
               </div>
 
@@ -536,20 +679,24 @@ export function ExpeditionForm() {
                     <button className="text-xs font-bold text-[#087e94] underline" onClick={() => setStep(1)} type="button">Editar</button>
                   </div>
                   <dl>
-                    <ReviewRow label="Proprietário" value={values.proprietarioJet === 'participante' ? values.nomeCompleto : values.nomeProprietario} />
+                    <ReviewRow label="Proprietário" value={values.proprietarioJet === 'participante' ? values.nomeCompleto : values.tipoProprietario === 'pf' ? values.nomeProprietario : values.razaoSocialProprietario} />
+                    <ReviewRow label="Tipo" value={values.proprietarioJet === 'participante' || values.tipoProprietario === 'pf' ? 'Pessoa física' : 'Pessoa jurídica'} />
+                    <ReviewRow label="CPF / CNPJ" value={values.proprietarioJet === 'participante' ? values.cpf : values.tipoProprietario === 'pf' ? values.cpfProprietario : values.cnpjProprietario} />
                     <ReviewRow label="Jet" value={[values.marcaJet, values.modeloJet, values.anoJet].filter(Boolean).join(' · ')} />
                     <ReviewRow label="Inscrição" value={values.inscricaoJet} />
                     <ReviewRow label="Documento do jet" value={values.docJet?.name ?? ''} />
-                    <ReviewRow label="Arrais" value={values.numeroArrais} />
+                    <ReviewRow label="Habilitação" value={values.numeroArrais} />
                     <ReviewRow label="Validade" value={values.validadeArrais} />
-                    <ReviewRow label="Documento do arrais" value={values.docArrais?.name ?? ''} />
+                    <ReviewRow label="Documento da habilitação" value={values.docArrais?.name ?? ''} />
                   </dl>
                 </div>
               </div>
 
               <div className="mt-6 flex items-start gap-3 rounded-xl border border-[#b9dfe5] bg-[#effbfc] p-4 text-sm leading-6 text-[#36545e]">
                 <LockKeyhole aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#087e94]" />
-                Seus documentos serão enviados somente quando o canal seguro de recebimento da Usina estiver configurado.
+                {BASIN_ENDPOINT_IS_VALID
+                  ? 'Seus dados e documentos serão enviados ao canal de recebimento configurado pela Usina do Jet.'
+                  : 'A integração está preparada e será ativada quando o canal de recebimento da Usina do Jet for configurado.'}
               </div>
 
               {submitError && (

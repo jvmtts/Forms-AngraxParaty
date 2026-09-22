@@ -38,7 +38,7 @@ function App() {
             </p>
             <h1 className="font-display text-[clamp(3.25rem,8vw,8.6rem)] font-black uppercase leading-[0.84] tracking-[-0.065em]">
               <span className="block sm:inline">Angra</span>
-              <span className="mr-[0.08em] text-lime-300 sm:ml-[0.08em]">×</span>
+              <span className="mr-[0.08em] text-[#B49A00] sm:ml-[0.08em]">×</span>
               <span>Paraty</span>
             </h1>
             <p className="mt-7 max-w-2xl text-base leading-7 text-white/75 sm:text-lg">
