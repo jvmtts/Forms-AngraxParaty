@@ -1,4 +1,5 @@
 import type { FormErrors, FormValues } from '../types/expeditionForm'
+import { validateCompanions } from './companionRules'
 
 export const FIELD_LIMITS = {
   nome: 120,
@@ -186,6 +187,7 @@ export function validatePersonal(values: FormValues) {
   if (values.cidade.trim().length < 2) errors.cidade = 'Informe uma cidade válida.'
   if (!values.estado) errors.estado = 'Selecione o estado.'
 
+  Object.assign(errors, validateCompanions(values.acompanhantes))
   return errors
 }
 

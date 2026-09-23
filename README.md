@@ -20,12 +20,12 @@ npm run build
 
 O formulário já está preparado para enviar os dados e os documentos diretamente ao Basin. A geração do contrato não faz parte desta etapa.
 
-Para testar localmente, copie `.env.example` para `.env` e substitua o valor pelo endpoint criado no painel do Basin:
+O endpoint desta expedição já está configurado no código. A variável abaixo é opcional e permite substituí-lo sem alterar o código:
 
 ```env
-VITE_BASIN_ENDPOINT=https://usebasin.com/f/SEU_FORM_ID
+VITE_BASIN_ENDPOINT=https://usebasin.com/f/2566ad740c53
 ```
 
-Na hospedagem, cadastre a mesma variável de ambiente e publique novamente o projeto. Como as variáveis do Vite são aplicadas durante a compilação, uma nova publicação é necessária sempre que o endpoint for alterado.
+Na hospedagem, não é necessário cadastrar a variável de ambiente para usar o endpoint acima. Caso você a defina, publique novamente o projeto após alterá-la, pois o Vite aplica essas variáveis durante a compilação.
 
-O envio usa `multipart/form-data`, mantém os documentos em seus formatos originais e apresenta os campos no painel do Basin com nomes legíveis. Sem um endpoint válido configurado, nenhum dado é enviado.
+O envio usa `multipart/form-data`, mantém os documentos em seus formatos originais e apresenta os campos no painel do Basin com nomes legíveis. Um endpoint inválido impede o envio.

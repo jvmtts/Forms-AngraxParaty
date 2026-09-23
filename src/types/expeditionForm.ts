@@ -1,8 +1,16 @@
 export type Step = 0 | 1 | 2
+export interface Companion {
+  id: string
+  nome: string
+  rg: string
+  dataNascimento: string
+  tamanhoCamiseta: string
+}
 export type Ownership = '' | 'participante' | 'terceiro'
 export type OwnerType = '' | 'pf' | 'pj'
 
 export interface FormValues {
+  acompanhantes: Companion[]
   nomeCompleto: string
   cpf: string
   rg: string
@@ -32,9 +40,10 @@ export interface FormValues {
   confirmacao: boolean
 }
 
-export type FormErrors = Partial<Record<keyof FormValues, string>>
+export type FormErrors = Record<string, string | undefined>
 
 export const initialValues: FormValues = {
+  acompanhantes: [],
   nomeCompleto: '',
   cpf: '',
   rg: '',
